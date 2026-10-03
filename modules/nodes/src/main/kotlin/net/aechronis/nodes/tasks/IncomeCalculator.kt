@@ -67,6 +67,13 @@ object IncomeCalculator {
             }
         }
 
+        // An unclaimed warzone pays its income to the town occupying it.
+        Territory.all().forEach { territory ->
+            if (territory.town != null) return@forEach
+            val occupier = territory.occupier ?: return@forEach
+            incomes.getOrPut(occupier, ::MutableIncomeBreakdown).add(incomeForTerritory(territory))
+        }
+
         return incomes.mapValues { (_, income) -> income.toImmutable() }
     }
 

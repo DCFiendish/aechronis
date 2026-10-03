@@ -32,11 +32,13 @@ import java.nio.file.StandardCopyOption
 import java.util.UUID
 
 /**
- * Scheduled king-of-the-hill events on claimed territories.
+ * Scheduled king-of-the-hill events on claimed or unclaimed territories.
  *
  * Between a zone's start and end time, the nation holding the territory
  * (its occupier's nation, otherwise its owner's nation) accrues hold time.
- * When the zone ends, the nation with the most hold time wins the territory.
+ * An unclaimed zone is held by whichever nation occupies its core.
+ * When the zone ends, the nation with the most hold time wins the territory
+ * and its capital annexes it.
  * Hold time only accrues while the server is running.
  */
 object Warzone {
@@ -87,15 +89,14 @@ object Warzone {
     }
 
     /**
-     * A scheduled or running warzone protects its territory from being
-     * unclaimed and its town from deletion and home annexation. Finished
-     * zones are removed, so the protection ends with the zone.
+     * A scheduled or running warzone exempts its town from home annexation.
+     * Finished zones are removed, so the exemption ends with the zone.
      */
     fun isRegistered(territory: Territory): Boolean = synchronized(this) {
         states.containsKey(territory.id)
     }
 
-    /** A town with a scheduled or running warzone cannot be removed into wilderness. */
+    /** A town owning a scheduled or running warzone is exempt from town-wide defeat. */
     fun ownsRegisteredZone(town: Town): Boolean = synchronized(this) {
         states.keys.any { territoryId -> Territory.fromId(territoryId)?.town === town }
     }
@@ -109,7 +110,8 @@ object Warzone {
 
     /**
      * Schedule warzones on [territories] from [startMillis] to [endMillis].
-     * Fails without changing anything if a territory is unclaimed or
+     * A territory may be unclaimed, in which case nations fight over it and
+     * the winner annexes it. Fails without changing anything if a territory
      * already has a scheduled or running zone.
      */
     fun schedule(
@@ -121,12 +123,6 @@ object Warzone {
         if (territories.isEmpty()) return@synchronized Result.failure(IllegalArgumentException("No territories given"))
         if (endMillis <= startMillis) return@synchronized Result.failure(IllegalArgumentException("Warzone must end after it starts"))
         if (endMillis <= nowMillis) return@synchronized Result.failure(IllegalArgumentException("Warzone end time is in the past"))
-        val unclaimed = territories.filter { it.town == null }
-        if (unclaimed.isNotEmpty()) {
-            return@synchronized Result.failure(
-                IllegalArgumentException("Warzone territories must belong to a town: ${unclaimed.joinToString(", ") { it.id.toString() }}"),
-            )
-        }
         val existing = territories.filter { states.containsKey(it.id) }
         if (existing.isNotEmpty()) {
             return@synchronized Result.failure(
@@ -184,6 +180,7 @@ object Warzone {
             saveLocked()
         }
         FlagWar.cancelWarzoneAttacks(territory)
+        releaseIfUnclaimed(territory)
         return Result.success(Unit)
     }
 
@@ -208,8 +205,7 @@ object Warzone {
             zones.entries.forEach { (idText, value) ->
                 try {
                     val state = parseZone(TerritoryId(idText.toInt()), value.jsonObject, nowMillis) ?: return@forEach
-                    // Warzones require a territory that belongs to a town.
-                    if (Territory.fromId(state.territoryId)?.town != null) states[state.territoryId] = state
+                    if (Territory.fromId(state.territoryId) != null) states[state.territoryId] = state
                 } catch (error: Exception) {
                     throw IllegalArgumentException("Invalid warzone '$idText'", error)
                 }
@@ -338,9 +334,12 @@ object Warzone {
         val territory = outcome.territory
         FlagWar.cancelWarzoneAttacks(territory)
         when (outcome) {
-            is Outcome.NoWinner -> Message.broadcast(
-                "${ChatColor.DARK_RED}[Warzone] Territory ${territory.id} ended with no nation holding it",
-            )
+            is Outcome.NoWinner -> {
+                releaseIfUnclaimed(territory)
+                Message.broadcast(
+                    "${ChatColor.DARK_RED}[Warzone] Territory ${territory.id} ended with no nation holding it",
+                )
+            }
 
             is Outcome.Won -> {
                 val winner = outcome.winner
@@ -362,6 +361,11 @@ object Warzone {
                 }
             }
         }
+    }
+
+    /** Occupation of unclaimed land only exists while it is a warzone. */
+    private fun releaseIfUnclaimed(territory: Territory) {
+        if (territory.town == null) Town.release(territory)
     }
 
     /** The nation currently holding a territory: its occupier's, otherwise its owner's. */

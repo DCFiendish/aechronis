@@ -1,6 +1,5 @@
 package net.aechronis.server.constants
 
-import net.aechronis.combat.objects.DamageFalloff
 import net.aechronis.combat.objects.Gun
 import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.format.NamedTextColor
@@ -260,7 +259,9 @@ object Guns {
             spreadMax = 7F,
             // TEST ONLY: multi-bullet + falloff
             bulletsPerShot = 8,
-            damageFalloff = DamageFalloff(start = 8.0, end = 24.0, minMultiplier = 0.3F),
+            falloffStart = 8.0,
+            falloffEnd = 24.0,
+            falloffMinMultiplier = 0.3F,
             bulletTrailParticle = Particle.DUST_COLOR_TRANSITION.withScale(0.2F),
             bulletTrailOffset = Vec(-0.3, -0.1, 0.9),
         )

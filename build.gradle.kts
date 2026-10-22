@@ -165,6 +165,7 @@ tasks.register<JavaExec>("devRun") {
     mainClass.set("net.aechronis.server.ServerKt")
     systemProperty("aechronis.dangerously-enable-all-permissions", "true")
     systemProperty("aechronis.dev.offlineAuth", "true")
+    systemProperty("aechronis.dev.superflat", "true")
     systemProperty("aechronis.dev.projectRoot", layout.projectDirectory.asFile.absolutePath)
     systemProperty("aechronis.dev.modulePaths", runtimeModuleProjects.joinToString(",") { it.removePrefix(":").replace(':', '/') })
     systemProperty("aechronis.dev.buildFiles", allprojects.joinToString(",") { relativePath(it.buildFile) })

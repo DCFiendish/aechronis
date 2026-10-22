@@ -22,6 +22,7 @@ import net.minestom.server.event.EventNode
 import net.minestom.server.event.player.AsyncPlayerConfigurationEvent
 import net.minestom.server.instance.InstanceContainer
 import net.minestom.server.instance.anvil.AnvilLoader
+import net.minestom.server.instance.block.Block
 import net.minestom.server.registry.RegistryKey
 import net.minestom.server.tag.Tag
 import net.minestom.server.world.DimensionType
@@ -171,6 +172,10 @@ private fun startMinecraftServer(
             Server.fullbrightKey,
             AnvilLoader(worldPath, DimensionType.OVERWORLD.key()),
         )
+    // dev only: fill ungenerated chunks with a stone superflat (y 0..63) for testing
+    if (System.getProperty("aechronis.dev.superflat") != null) {
+        Server.instance.setGenerator { unit -> unit.modifier().fillHeight(0, 64, Block.STONE) }
+    }
     MinecraftServer.getInstanceManager().registerInstance(Server.instance)
     Server.loadSpawnPoint()
 

@@ -8,8 +8,10 @@ import net.aechronis.nodes.NodesModule
 import net.aechronis.server.config.VictorianDuelsKits
 import net.aechronis.server.config.VictorianNodesConfiguration
 import net.aechronis.server.config.VictorianVanillaConfiguration
+import net.aechronis.server.constants.Airships
 import net.aechronis.server.constants.Ammo
 import net.aechronis.server.constants.Armor
+import net.aechronis.server.constants.Balloons
 import net.aechronis.server.constants.Boats
 import net.aechronis.server.constants.FieldPieces
 import net.aechronis.server.constants.Guns
@@ -89,6 +91,9 @@ class VictorianEraModule : AechronisModule {
             FieldPieces.kruppC64,
             FieldPieces.gatlingGun,
             FieldPieces.maximGun,
+            Balloons.hotAirBalloon,
+            Airships.zeppelin,
+            Airships.airship,
         )
     }
 

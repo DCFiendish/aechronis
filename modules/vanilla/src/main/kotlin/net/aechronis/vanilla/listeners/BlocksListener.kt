@@ -2,6 +2,7 @@ package net.aechronis.vanilla.listeners
 
 import net.aechronis.vanilla.Vanilla
 import net.aechronis.vanilla.managers.Blocks
+import net.aechronis.vanilla.managers.ConverterSearch
 import net.aechronis.vanilla.objects.consumeStationInteraction
 import net.minestom.server.event.inventory.InventoryCloseEvent
 import net.minestom.server.event.inventory.InventoryItemChangeEvent
@@ -30,6 +31,22 @@ object BlocksListener {
         val open = event.player.openInventory as? Inventory ?: return
         if (open !in Blocks.stonecutters) return
 
+        // Double-click gathers matching items from every open inventory, which would pull the
+        // display-only outputs and chain icons out of the converter.
+        if (event.click is Click.Double) {
+            event.isCancelled = true
+            return
+        }
+        // A drag can spread the cursor over the output grid or past the chain check on the input row.
+        val drag = event.click as? Click.Drag
+        if (drag != null) {
+            val cursor = event.player.inventory.cursorItem
+            val outsideInput = drag.slots().any { it in 0 until open.size && it !in Blocks.INPUT_START_SLOT..Blocks.INPUT_END_SLOT }
+            val touchesInput = drag.slots().any { it in Blocks.INPUT_START_SLOT..Blocks.INPUT_END_SLOT }
+            if (outsideInput || (touchesInput && !cursor.isAir && !Blocks.canDeposit(open, cursor.material()))) event.isCancelled = true
+            return
+        }
+
         // Route player-inventory shift-clicks into the converter inputs instead of letting
         // Minestom place them in an arbitrary slot in this chest.
         if (event.inventory !== open) {
@@ -57,8 +74,17 @@ object BlocksListener {
                 event.isCancelled = true
                 Blocks.setConverterPage(open, Blocks.currentConverterPage(open) + 1)
             }
+            Blocks.BACK_SLOT -> {
+                event.isCancelled = true
+                Blocks.showListing(open, null)
+            }
+            Blocks.SEARCH_SLOT -> {
+                event.isCancelled = true
+                if (Blocks.isBrowsing(open)) ConverterSearch.open(event.player) else Blocks.toggleMasterOnly(open)
+            }
             in Blocks.OUTPUT_START_SLOT..Blocks.OUTPUT_END_SLOT -> {
                 event.isCancelled = true
+                if (Blocks.browseClick(open, event.slot)) return
                 Blocks.outputFor(open, event.slot)?.let { Blocks.convert(event.player, open, it) }
             }
             else -> event.isCancelled = true

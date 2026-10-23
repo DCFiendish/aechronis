@@ -16,18 +16,33 @@ object Blocks {
     internal const val OUTPUT_END_SLOT = 44
     internal const val PREVIOUS_PAGE_SLOT = 45
     private const val PAGE_SLOT = 47
+    private const val HELP_SLOT = 49
+    internal const val SEARCH_SLOT = 51
+    internal const val BACK_SLOT = 46
     internal const val NEXT_PAGE_SLOT = 53
     private const val OUTPUTS_PER_PAGE = OUTPUT_END_SLOT - OUTPUT_START_SLOT + 1
+
+    // The home page fills three rows with chains and keeps the bottom row for the master chain,
+    // centred directly above the how-to book.
+    private const val HOME_CHAINS_PER_PAGE = 27
+    private const val MASTER_SLOT = 40
 
     val stonecutters: MutableSet<Inventory> = mutableSetOf()
     val outputsByInput: MutableMap<Material, MutableList<Material>> = mutableMapOf()
     private val cycleByMaterial: MutableMap<Material, Set<Material>> = mutableMapOf()
     private val converterPages: MutableMap<Inventory, Int> = mutableMapOf()
+    private val browseListings: MutableMap<Inventory, List<ItemStack>> = mutableMapOf()
+    private val masterOnly: MutableSet<Inventory> = mutableSetOf()
+    private val masterViews: MutableSet<Inventory> = mutableSetOf()
 
-    fun openConverter(player: Player) {
+    fun openConverter(
+        player: Player,
+        listing: List<ItemStack>? = null,
+    ) {
         val inv = Inventory(InventoryType.CHEST_6_ROW, Component.text("Block Converter"))
         stonecutters.add(inv)
         converterPages[inv] = 0
+        if (listing != null) browseListings[inv] = listing
         refreshConverter(inv)
         player.openInventory(inv)
     }
@@ -40,7 +55,13 @@ object Blocks {
     private fun converterOptions(inv: Inventory): List<Material> {
         val inputs = inputStacks(inv)
         val firstInput = inputs.firstOrNull()?.material() ?: return emptyList()
-        val cycle = cycleByMaterial[firstInput] ?: outputsByInput[firstInput].orEmpty().toSet()
+        val master = ConverterBrowse.masterBlocks()
+        val cycle =
+            if (inv in masterOnly && firstInput in master) {
+                master.toSet()
+            } else {
+                cycleByMaterial[firstInput] ?: outputsByInput[firstInput].orEmpty().toSet()
+            }
         val depositedMaterials = inputs.map(ItemStack::material).toSet()
         return cycle.filter { output -> depositedMaterials.any { it != output } }
     }
@@ -50,6 +71,8 @@ object Blocks {
         material: Material,
     ): Boolean {
         val firstInput = inputStacks(inv).firstOrNull()?.material() ?: return true
+        // Master Chain only mode mixes master blocks across their own chains; normal mode never does.
+        if (inv in masterOnly && firstInput in ConverterBrowse.masterBlocks()) return material in ConverterBrowse.masterBlocks()
         val cycle = cycleByMaterial[firstInput]
         return cycle?.contains(material) ?: (material == firstInput || material in outputsByInput[firstInput].orEmpty())
     }
@@ -90,15 +113,34 @@ object Blocks {
     ) {
         if (resetPage) converterPages[inv] = 0
 
-        val outputs = converterOptions(inv)
-        val pageCount = maxOf(1, (outputs.size + OUTPUTS_PER_PAGE - 1) / OUTPUTS_PER_PAGE)
+        // Empty input row: show a browse listing (home chains, search results or one chain's members).
+        val browsing = inputStacks(inv).isEmpty()
+        if (!browsing) browseListings.remove(inv)
+        val home = browsing && inv !in browseListings
+        val entries = if (browsing) browseListings[inv] ?: ConverterBrowse.chains() else converterOptions(inv).map(ItemStack::of)
+        val perPage = if (home) HOME_CHAINS_PER_PAGE else OUTPUTS_PER_PAGE
+        val pageCount = maxOf(1, (entries.size + perPage - 1) / perPage)
         val page = (converterPages[inv] ?: 0).coerceIn(0, pageCount - 1)
         converterPages[inv] = page
 
         for (slot in OUTPUT_START_SLOT..OUTPUT_END_SLOT) {
-            val output = outputs.getOrNull(page * OUTPUTS_PER_PAGE + slot - OUTPUT_START_SLOT)
-            inv.setItemStack(slot, output?.let(ItemStack::of) ?: ItemStack.AIR)
+            val offset = slot - OUTPUT_START_SLOT
+            inv.setItemStack(slot, if (offset < perPage) entries.getOrNull(page * perPage + offset) ?: ItemStack.AIR else ItemStack.AIR)
         }
+        if (home) inv.setItemStack(MASTER_SLOT, ConverterBrowse.masterEntry())
+        inv.setItemStack(HELP_SLOT, ConverterBrowse.helpItem)
+        val master = ConverterBrowse.masterBlocks()
+        val canToggle = !browsing && inputStacks(inv).all { it.material() in master }
+        if (!canToggle) masterOnly.remove(inv)
+        inv.setItemStack(
+            SEARCH_SLOT,
+            when {
+                browsing -> ConverterBrowse.searchItem
+                canToggle -> ConverterBrowse.masterToggleItem(inv in masterOnly)
+                else -> ItemStack.AIR
+            },
+        )
+        inv.setItemStack(BACK_SLOT, if (browsing && inv in browseListings) ConverterBrowse.backItem else ItemStack.AIR)
 
         inv.setItemStack(
             PREVIOUS_PAGE_SLOT,
@@ -110,7 +152,7 @@ object Blocks {
         )
         inv.setItemStack(
             PAGE_SLOT,
-            if (outputs.isNotEmpty()) {
+            if (entries.isNotEmpty()) {
                 ItemStack.of(Material.PAPER).withCustomName(Component.text("Page ${page + 1}/$pageCount"))
             } else {
                 ItemStack.AIR
@@ -171,9 +213,49 @@ object Blocks {
         refreshConverter(inv)
     }
 
+    /** True when the input row is empty, so the search slot is the search button rather than the master toggle. */
+    internal fun isBrowsing(inv: Inventory): Boolean = inputStacks(inv).isEmpty()
+
+    /** Switches between a master block's full outputs and just the master chain's. */
+    internal fun toggleMasterOnly(inv: Inventory) {
+        if (!masterOnly.remove(inv)) masterOnly.add(inv)
+        converterPages[inv] = 0
+        refreshConverter(inv)
+    }
+
     internal fun closeConverter(inv: Inventory) {
+        masterOnly.remove(inv)
+        masterViews.remove(inv)
         stonecutters.remove(inv)
         converterPages.remove(inv)
+        browseListings.remove(inv)
+    }
+
+    /** Replaces the empty-input listing, or restores the home chains when [listing] is null. */
+    internal fun showListing(
+        inv: Inventory,
+        listing: List<ItemStack>?,
+    ) {
+        masterViews.remove(inv)
+        if (listing == null) browseListings.remove(inv) else browseListings[inv] = listing
+        converterPages[inv] = 0
+        refreshConverter(inv)
+    }
+
+    /** True when a click on an output slot hit a browse entry rather than a convertible output. */
+    internal fun browseClick(
+        inv: Inventory,
+        slot: Int,
+    ): Boolean {
+        if (inputStacks(inv).isNotEmpty()) return false
+        // The master chain view is read-only: its blocks convert from the top row, not by clicking here.
+        if (inv in masterViews) return true
+
+        val clicked = inv.getItemStack(slot)
+        if (clicked.isAir) return true
+        showListing(inv, ConverterBrowse.members(clicked.material()))
+        if (ConverterBrowse.isMasterIcon(clicked.material())) masterViews.add(inv)
+        return true
     }
 
     internal fun conversionOutputs(cycles: List<List<Material>>): Map<Material, List<Material>> {
@@ -211,5 +293,6 @@ object Blocks {
         }
 
         BlocksListener.init()
+        ConverterSearch.init()
     }
 }

@@ -179,8 +179,8 @@ object Blocks {
                         "${type}_shelf",
                     )
                 }.toTypedArray(),
-            "bamboo_block",
-            "stripped_bamboo_block",
+            // bamboo_block and stripped_bamboo_block stay in LogCycle only: they craft into 8 bamboo planks,
+            // so converting planks back into them would be an infinite wood loop.
             "bamboo_planks",
             "bamboo_mosaic",
             "bamboo_stairs",
@@ -698,11 +698,12 @@ object Blocks {
                 "resin_brick_slab",
                 "resin_brick_wall",
             ),
+            // iron_bars lives in the stone chain only. Sharing it would bridge this chain (crafting tables,
+            // barrels) to the master chain, and planks craft from logs 8 to 1, which would make an infinite loop.
             cycle(
                 "lantern",
                 "soul_lantern",
                 "iron_chain",
-                "iron_bars",
                 "scaffolding",
                 "flower_pot",
                 "decorated_pot",

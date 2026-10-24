@@ -14,6 +14,7 @@ import net.aechronis.server.constants.Armor
 import net.aechronis.server.constants.Balloons
 import net.aechronis.server.constants.Boats
 import net.aechronis.server.constants.FieldPieces
+import net.aechronis.server.constants.Grenades
 import net.aechronis.server.constants.Guns
 import net.aechronis.server.constants.Melees
 import net.aechronis.server.modules.AechronisModule
@@ -85,6 +86,7 @@ class VictorianEraModule : AechronisModule {
         Item.registerItems(
             *Ammo.all.toTypedArray(),
             *Guns.all.toTypedArray(),
+            *Grenades.all.toTypedArray(),
             *Melees.all.toTypedArray(),
             *Armor.all.toTypedArray(),
             *Boats.all.toTypedArray(),

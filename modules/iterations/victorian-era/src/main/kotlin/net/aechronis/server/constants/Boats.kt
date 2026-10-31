@@ -19,6 +19,7 @@ import net.minestom.server.coordinate.Vec
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
+import kotlin.math.sqrt
 
 object Boats {
     // Weapon selection boxes enclose the scaled, rotated component geometry with 0.1 m padding.
@@ -34,13 +35,6 @@ object Boats {
     // https://urn.dsm.museum/DSA/DSA03_1980_069114_Rindt.pdf (printed page 91)
     // Raw beam/length: 9.07365 / 46.578731517043. Scale = metres * 16 / raw extent; Y follows Z.
     private val pillnitzScale = Vec(18.074314085291, 18.109552847985, 18.109552847985)
-
-    // Tempete: 76 m overall and 17.6 m beam; 73.6 m is between perpendiculars.
-    // https://navypedia.org/ships/france/fr_bb_tempete.htm
-    // Rounded trial draught of 5.4 m; draught at maximum load varies.
-    // https://cnum.cnam.fr/pgi/sresrech.php?PTFSA2.2/0061= (trial table: 5.32-5.38 m)
-    // Raw beam/draught/length: 10.700001108395 / 3.25 / 47.621556445726. Scale = metres * 16 / raw extent.
-    private val tempeteScale = Vec(26.317754283134, 26.584615384615, 25.534654697518)
 
     // Hulls follow the model's changing beam; spars and rigging do not obstruct water travel.
     private val dollyHull =
@@ -61,28 +55,6 @@ object Boats {
             box(pillnitzScale, 7.5, -0.6, 29.0, 8.5, 1.18, 31.2),
             box(pillnitzScale, 7.91, -0.91, -11.0, 8.09, -0.79, 28.8),
             box(pillnitzScale, 7.96, -0.91, 30.05, 8.04, 0.58, 31.45),
-        )
-
-    private val tempeteHull =
-        listOf(
-            box(tempeteScale, 7.5, -2.7, -15.2, 8.5, 0.9, -11.5),
-            box(tempeteScale, 5.4, -2.7, -11.5, 10.6, 0.9, -5.4),
-            box(tempeteScale, 3.7, -2.7, -5.4, 12.3, 0.9, 2.2),
-            box(tempeteScale, 2.7, -2.7, 2.2, 13.3, 0.9, 20.0),
-            box(tempeteScale, 3.5, -2.7, 20.0, 12.5, 0.9, 25.0),
-            box(tempeteScale, 5.5, -2.7, 25.0, 10.5, 0.9, 28.5),
-            box(tempeteScale, 7.3, -2.7, 28.5, 8.7, 0.9, 31.0),
-            // The lower bilge reaches the full draught and tapers inside the wider upper hull.
-            box(tempeteScale, 7.856, -3.25, -12.7, 8.144, -2.62, -9.64),
-            box(tempeteScale, 6.488, -3.25, -9.64, 9.512, -2.62, -4.06),
-            box(tempeteScale, 5.084, -3.25, -4.06, 10.916, -2.62, 2.78),
-            box(tempeteScale, 4.148, -3.25, 2.78, 11.852, -2.62, 18.8),
-            box(tempeteScale, 4.616, -3.25, 18.8, 11.384, -2.62, 23.21),
-            box(tempeteScale, 5.912, -3.25, 23.21, 10.088, -2.62, 26.45),
-            box(tempeteScale, 7.496, -3.25, 26.45, 8.504, -2.62, 28.52),
-            // Rotated ram bounds and the narrow rudder contribute to overall length.
-            box(tempeteScale, 7.86, -1.357440219327, -15.691556445726, 8.14, 0.757440219327, -14.708443554274),
-            box(tempeteScale, 7.92, -2.85, 31.46, 8.08, -0.35, 31.93),
         )
 
     val dolly =
@@ -222,38 +194,135 @@ object Boats {
             collisionHitbox = pillnitzCollision(pillnitzScale),
         )
 
-    val tempete =
+    // Geometry follows tools/blockbench/boats/build-hms-devastation.cjs; model waterline is Y=0.
+    // 307 ft overall and 62 ft 3 in beam; one block represents one metre.
+    // https://en.wikipedia.org/wiki/HMS_Devastation_(1871)
+    private val hmsDevastationScale = Vec(93.5736 * 16 / 46)
+    private val hmsDevastationHalfBeam = 18.9738 * 8 / hmsDevastationScale.x
+
+    // The upper works occupy the 150 ft central breastwork, leaving long clear
+    // fore and aft weather decks. Circular mounts retain their diameter.
+    private fun hmsDevastationUpperZ(z: Double): Double = 8 + (z - 8) * 0.65
+
+    private val hmsDevastationForeDeckEnd = hmsDevastationUpperZ(-10.0)
+    private val hmsDevastationHullStations =
+        listOf(
+            -15.0 to 0.08,
+            -13.0 to 1.5,
+            -10.0 to 3.0,
+            -6.0 to 4.15,
+            0.0 to hmsDevastationHalfBeam,
+            18.0 to hmsDevastationHalfBeam,
+            24.0 to 4.1,
+            28.0 to 2.65,
+            30.0 to 1.4,
+            31.0 to 0.12,
+        )
+    private val hmsDevastationBreastworkStations =
+        listOf(
+            -10.0 to 0.3,
+            -9.0 to 2.4,
+            -7.0 to 3.95,
+            21.5 to 3.95,
+            24.0 to 2.4,
+            25.2 to 0.15,
+        ).map { (z, width) -> hmsDevastationUpperZ(z) to width }
+    private val hmsDevastationHurricaneOutline =
+        listOf(
+            4.4 to -0.8,
+            11.6 to -0.8,
+            11.6 to 16.0,
+            4.4 to 16.0,
+        ).map { (x, z) -> x to hmsDevastationUpperZ(z) }
+
+    private fun hmsDevastationHalfWidth(z: Double): Double {
+        val (start, end) = hmsDevastationHullStations.zipWithNext().first { (_, end) -> z <= end.first }
+        return start.second + (end.second - start.second) * (z - start.first) / (end.first - start.first)
+    }
+
+    // The narrow bilge and fine bow/stern follow the visible hull. Water sampling
+    // needs only its upper footprint, avoiding repeated samples of submerged courses.
+    private val hmsDevastationWaterHull =
+        ((0..46).map { -15.0 + it } + hmsDevastationForeDeckEnd).sorted().zipWithNext { z, endZ ->
+            val width = hmsDevastationHalfWidth((z + endZ) / 2)
+            box(hmsDevastationScale, 8.0 - width, -0.12, z, 8.0 + width, if (z < hmsDevastationForeDeckEnd) 1.3 else 0.7, endZ)
+        }
+    private val hmsDevastationHull =
+        hmsDevastationWaterHull +
+            (0 until 23).flatMap { station ->
+                val z = -15.0 + station * 2
+                val mid = z + 1
+                val width = hmsDevastationHalfWidth(mid)
+                val fullness = maxOf(0.12, minOf(1.0, (mid + 15) / 9, (31 - mid) / 8))
+                // Four collision courses approximate the model's faceted elliptical bilge.
+                (0 until 4).map { layer ->
+                    val bottom = -3.9 + layer * 3.78 / 4
+                    val top = bottom + 3.78 / 4
+                    val depth = ((bottom + top) / 2 + 0.12) / 3.78
+                    val fraction = sqrt(1 - depth * depth) * 0.97
+                    box(hmsDevastationScale, 8 - width * fraction, bottom * fullness, z, 8 + width * fraction, top * fullness, z + 2)
+                }
+            } +
+            listOf(
+                box(hmsDevastationScale, 7.91, -3.92, -7.0, 8.09, -3.73, 23.0),
+                box(hmsDevastationScale, 7.94, -3.4, 29.5, 8.06, -0.3, 30.8),
+            )
+
+    private fun hmsDevastationTurretHousing(z: Double): List<HitboxPart> =
+        (0 until 16).map { section ->
+            val minZ = z - 2.35 + section * 4.7 / 16
+            val maxZ = minZ + 4.7 / 16
+            val depth = (minZ + maxZ) / 2 - z
+            val width = sqrt(2.35 * 2.35 - depth * depth)
+            box(hmsDevastationScale, 8 - width, 1.8, minZ, 8 + width, 3.2, maxZ)
+        }
+
+    val hmsDevastation =
         Boat(
-            name = "tempete",
-            itemName = Component.text("Tempête", NamedTextColor.GOLD).decoration(TextDecoration.ITALIC, false),
+            name = "hms-devastation",
+            itemName = Component.text("HMS Devastation", NamedTextColor.GOLD).decoration(TextDecoration.ITALIC, false),
             itemLore =
                 listOf(
-                    Component
-                        .text(
-                            "Coastal ironclad · 6 crew seats · 5 gun stations",
-                            NamedTextColor.GRAY,
-                        ).decoration(TextDecoration.ITALIC, false),
-                    Component.text("2 × 274 mm · 4 × 37 mm", NamedTextColor.GRAY).decoration(TextDecoration.ITALIC, false),
+                    Component.text("British turret battleship · 1873", NamedTextColor.GRAY).decoration(TextDecoration.ITALIC, false),
+                    Component.text("3 crew seats · 2 twin 12-inch turrets", NamedTextColor.GRAY).decoration(TextDecoration.ITALIC, false),
                 ),
-            model = "aechronis:tempete-body",
-            scale = tempeteScale.z,
-            modelScale = tempeteScale,
+            model = "aechronis:hms-devastation-body",
+            scale = hmsDevastationScale.z,
+            modelScale = hmsDevastationScale,
             hitbox =
                 Hitbox(
-                    tempeteHull +
+                    hmsDevastationHull + hmsDevastationTurretHousing(hmsDevastationUpperZ(-5.5)) +
+                        hmsDevastationTurretHousing(hmsDevastationUpperZ(21.0)) +
                         listOf(
-                            box(tempeteScale, 4.4, 0.9, -1.4, 11.6, 1.96, 20.1),
-                            box(tempeteScale, 4.7, 1.96, -2.8, 11.3, 4.425, 3.8),
-                            box(tempeteScale, 7.25, 1.96, 5.1, 8.75, 4.68, 20.3),
-                            box(tempeteScale, 5.0, 4.52, 4.4, 11.0, 4.74, 21.4),
-                            box(tempeteScale, 7.3, 4.74, 6.0, 8.7, 8.1, 7.2),
+                            box(hmsDevastationScale, 4.05, 0.7, hmsDevastationUpperZ(-8.0), 11.95, 1.8, hmsDevastationUpperZ(22.0)),
+                            box(hmsDevastationScale, 6.0, 1.8, hmsDevastationUpperZ(0.0), 10.0, 4.0, hmsDevastationUpperZ(15.0)),
+                            box(hmsDevastationScale, 6.1, 4.15, hmsDevastationUpperZ(-0.5), 9.9, 5.1, hmsDevastationUpperZ(1.15)),
+                            box(hmsDevastationScale, 4.4, 4.0, hmsDevastationUpperZ(-0.8), 11.6, 4.15, hmsDevastationUpperZ(16.0)),
+                            box(
+                                hmsDevastationScale,
+                                7.35,
+                                4.15,
+                                hmsDevastationUpperZ(3.2) - 0.65,
+                                8.65,
+                                8.05,
+                                hmsDevastationUpperZ(3.2) + 0.65,
+                            ),
+                            box(
+                                hmsDevastationScale,
+                                7.35,
+                                4.15,
+                                hmsDevastationUpperZ(9.8) - 0.65,
+                                8.65,
+                                8.05,
+                                hmsDevastationUpperZ(9.8) + 0.65,
+                            ),
                         ),
                 ),
-            waterHitbox = Hitbox(tempeteHull),
-            waterlineOffset = -tempeteScale.y / 2,
+            waterHitbox = Hitbox(hmsDevastationWaterHull),
+            waterlineOffset = -hmsDevastationScale.y / 2,
             health =
                 Health(
-                    1800F,
+                    2400F,
                     mapOf(
                         AmmoTypes.NORMAL to 1F,
                         AmmoTypes.EXPLOSIVE to 75F,
@@ -261,121 +330,194 @@ object Boats {
                         AmmoTypes.MISSILE to 150F,
                     ),
                 ),
-            placeTime = 6000,
-            maxSpeed = 0.90285F,
-            acceleration = 0.002F,
-            braking = 0.005F,
-            friction = 0.992F,
-            turnSpeed = 0.5F,
+            placeTime = 8000,
+            // 13.5 knots at twenty simulation ticks per second.
+            maxSpeed = 0.34725F,
+            acceleration = 0.0015F,
+            braking = 0.004F,
+            friction = 0.994F,
+            turnSpeed = 0.35F,
             maxClimbHeight = 0.5F,
-            helmSeat = VehicleSeat("helm", "Helmsman", VehicleSeatRole.DRIVER, point(tempeteScale, 8.0, 4.74, 10.0)),
+            helmSeat =
+                VehicleSeat(
+                    "helm",
+                    "Helmsman",
+                    VehicleSeatRole.DRIVER,
+                    point(hmsDevastationScale, 8.0, 5.1, hmsDevastationUpperZ(0.5)),
+                ),
             invisibleWhileRiding = false,
             invulnerableWhileRiding = false,
             armament =
                 BoatArmament(
                     ammo = Ammo.artilleryShell,
-                    weapons =
-                        listOf(
-                            BoatWeapon(
-                                name = "Twin 274 mm turret",
-                                id = "main-turret",
-                                model = "aechronis:tempete-turret",
-                                pivotOffset = point(tempeteScale, 8.0, 1.96, 0.5),
-                                // Both barrels share one central firing point so the optical seat stays steady between shots.
-                                muzzleOffsets = listOf(vector(tempeteScale, 0.0, 0.76, 4.032), vector(tempeteScale, 0.0, 0.76, 4.032)),
-                                operatorOffset = point(tempeteScale, 8.0, 1.5, 0.5),
-                                interactionHitbox = Hitbox(listOf(HitboxPart(Vec(0.0, 2.098, 0.571), Vec(5.53, 2.1, 5.94)))),
-                                maxYaw = 180F,
-                                scopeEyeDistance = 3.5,
-                                traverseSpeed = 0.8F,
-                                reloadTime = 10000,
-                                projectileSpeed = 4.0,
-                                projectileExplosionRadius = 4,
-                                projectileExplosionDamage = 100F,
-                                projectileMaxRange = 256.0,
-                            ),
-                            BoatWeapon(
-                                name = "Port forward 37 mm gun",
-                                id = "port-forward",
-                                model = "aechronis:tempete-light-gun-port-fore",
-                                pivotOffset = point(tempeteScale, 5.7, 5.49, 8.3),
-                                muzzleOffsets = listOf(vector(tempeteScale, 0.704, 0.3, 0.0)),
-                                operatorOffset = point(tempeteScale, 6.6, 4.8, 8.3),
-                                interactionHitbox = Hitbox(listOf(HitboxPart(Vec(0.274, 0.328, 0.114), Vec(0.97, 0.44, 0.5)))),
-                                neutralYaw = -90F,
-                                maxYaw = 45F,
-                                traverseSpeed = 3F,
-                                reloadTime = 1800,
-                                projectileSpeed = 4.0,
-                                projectileExplosionRadius = 1,
-                                projectileExplosionDamage = 24F,
-                                projectileMaxRange = 192.0,
-                            ),
-                            BoatWeapon(
-                                name = "Port aft 37 mm gun",
-                                id = "port-aft",
-                                model = "aechronis:tempete-light-gun-port-aft",
-                                pivotOffset = point(tempeteScale, 5.7, 5.49, 20.7),
-                                muzzleOffsets = listOf(vector(tempeteScale, 0.704, 0.3, 0.0)),
-                                operatorOffset = point(tempeteScale, 6.6, 4.8, 20.7),
-                                interactionHitbox = Hitbox(listOf(HitboxPart(Vec(0.274, 0.328, 0.114), Vec(0.97, 0.44, 0.5)))),
-                                neutralYaw = -90F,
-                                maxYaw = 45F,
-                                traverseSpeed = 3F,
-                                reloadTime = 1800,
-                                projectileSpeed = 4.0,
-                                projectileExplosionRadius = 1,
-                                projectileExplosionDamage = 24F,
-                                projectileMaxRange = 192.0,
-                            ),
-                            BoatWeapon(
-                                name = "Starboard forward 37 mm gun",
-                                id = "starboard-forward",
-                                model = "aechronis:tempete-light-gun-starboard-fore",
-                                pivotOffset = point(tempeteScale, 10.3, 5.49, 8.3),
-                                muzzleOffsets = listOf(vector(tempeteScale, -0.704, 0.3, 0.0)),
-                                operatorOffset = point(tempeteScale, 9.4, 4.8, 8.3),
-                                interactionHitbox = Hitbox(listOf(HitboxPart(Vec(-0.274, 0.328, -0.114), Vec(0.97, 0.44, 0.5)))),
-                                neutralYaw = 90F,
-                                maxYaw = 45F,
-                                traverseSpeed = 3F,
-                                reloadTime = 1800,
-                                projectileSpeed = 4.0,
-                                projectileExplosionRadius = 1,
-                                projectileExplosionDamage = 24F,
-                                projectileMaxRange = 192.0,
-                            ),
-                            BoatWeapon(
-                                name = "Starboard aft 37 mm gun",
-                                id = "starboard-aft",
-                                model = "aechronis:tempete-light-gun-starboard-aft",
-                                pivotOffset = point(tempeteScale, 10.3, 5.49, 20.7),
-                                muzzleOffsets = listOf(vector(tempeteScale, -0.704, 0.3, 0.0)),
-                                operatorOffset = point(tempeteScale, 9.4, 4.8, 20.7),
-                                interactionHitbox = Hitbox(listOf(HitboxPart(Vec(-0.274, 0.328, -0.114), Vec(0.97, 0.44, 0.5)))),
-                                neutralYaw = 90F,
-                                maxYaw = 45F,
-                                traverseSpeed = 3F,
-                                reloadTime = 1800,
-                                projectileSpeed = 4.0,
-                                projectileExplosionRadius = 1,
-                                projectileExplosionDamage = 24F,
-                                projectileMaxRange = 192.0,
-                            ),
-                        ),
+                    weapons = listOf(hmsDevastationTurret("fore", -5.5, false), hmsDevastationTurret("aft", 21.0, true)),
                 ),
             animatedParts =
-                listOf(
+                listOf(6.5, 9.5).map { x ->
                     AnimatedPart.propeller(
-                        model = "aechronis:tempete-propeller",
-                        offset = point(tempeteScale, 8.0, -1.75, 31.08),
-                        radius = 1.33 * tempeteScale.y / 16,
-                    ),
-                ),
-            collisionHitbox = tempeteCollision(tempeteScale),
+                        model = "aechronis:hms-devastation-propeller",
+                        offset = point(hmsDevastationScale, x, -2.8, 28.8),
+                        radius = 1.31 * hmsDevastationScale.y / 16,
+                    )
+                },
+            collisionHitbox =
+                CollisionBuilder(hmsDevastationScale)
+                    .apply {
+                        val deckBreak = hmsDevastationForeDeckEnd to hmsDevastationHalfWidth(hmsDevastationForeDeckEnd)
+                        surface(
+                            hmsDevastationOutline(hmsDevastationHullStations.filter { it.first < hmsDevastationForeDeckEnd } + deckBreak),
+                            top = 1.3,
+                        )
+                        surface(
+                            hmsDevastationOutline(
+                                listOf(deckBreak) + hmsDevastationHullStations.filter { it.first > hmsDevastationForeDeckEnd },
+                            ),
+                            top = 0.7,
+                        )
+                        surface(hmsDevastationOutline(hmsDevastationBreastworkStations), top = 1.8)
+                        surface(hmsDevastationHurricaneOutline, top = 4.15)
+                        // The rotatable turret barrels are excluded from fixed player collision.
+                        for (z in listOf(-5.5, 21.0)) {
+                            column(hmsDevastationCircle(8.0, hmsDevastationUpperZ(z), 2.35), bottom = 1.8, top = 3.2)
+                        }
+                        solid(6.0, 1.8, hmsDevastationUpperZ(0.0), 10.0, 4.0, hmsDevastationUpperZ(15.0))
+                        for (z in listOf(3.2, 9.8)) {
+                            column(hmsDevastationCircle(8.0, hmsDevastationUpperZ(z), 0.65), bottom = 4.15, top = 8.05)
+                        }
+                        solid(7.88, 4.15, hmsDevastationUpperZ(12.88), 8.12, 12.8, hmsDevastationUpperZ(13.12))
+                        solid(7.934, 12.8, hmsDevastationUpperZ(12.934), 8.066, 19.5, hmsDevastationUpperZ(13.066))
+                        solid(6.1, 4.15, hmsDevastationUpperZ(-0.5), 9.9, 5.1, hmsDevastationUpperZ(1.15))
+                        repeat(4) { step ->
+                            surface(
+                                6.9,
+                                7.6,
+                                hmsDevastationUpperZ(2.35 - (step + 1) * 0.3),
+                                hmsDevastationUpperZ(2.35 - step * 0.3),
+                                top = 4.15 + (step + 1) * 0.2375,
+                                maxCubeSize = 0.5,
+                            )
+                        }
+                        for (x in listOf(6.0, 9.3)) {
+                            repeat(3) { step ->
+                                surface(
+                                    x,
+                                    x + 0.7,
+                                    hmsDevastationUpperZ(-10.9 + step * 0.3),
+                                    hmsDevastationUpperZ(-10.6 + step * 0.3),
+                                    top = 1.3 + (step + 1) * 0.5 / 3,
+                                    maxCubeSize = 0.5,
+                                )
+                            }
+                            surface(x, x + 0.7, hmsDevastationUpperZ(-10.0), hmsDevastationUpperZ(-8.8), top = 1.8)
+                        }
+                        for (x in listOf(4.4, 10.9)) {
+                            surface(x, x + 0.7, hmsDevastationUpperZ(21.4), hmsDevastationUpperZ(24.0), top = 1.8)
+                            repeat(6) { step ->
+                                surface(
+                                    x,
+                                    x + 0.7,
+                                    hmsDevastationUpperZ(25.8 - (step + 1) * 0.3),
+                                    hmsDevastationUpperZ(25.8 - step * 0.3),
+                                    top = 0.7 + (step + 1) * 1.1 / 6,
+                                    maxCubeSize = 0.5,
+                                )
+                            }
+                        }
+                        for (x in listOf(4.8, 10.5)) {
+                            repeat(12) { step ->
+                                surface(
+                                    x,
+                                    x + 0.7,
+                                    hmsDevastationUpperZ(18.4 - (step + 1) * 0.2),
+                                    hmsDevastationUpperZ(18.4 - step * 0.2),
+                                    top = 1.8 + (step + 1) * 2.35 / 12,
+                                    maxCubeSize = 0.4,
+                                )
+                            }
+                        }
+                        for (sign in listOf(-1, 1)) {
+                            val perimeter =
+                                (0..35).map { index ->
+                                    val z = -14.75 + index * 1.3
+                                    Vec(
+                                        8 + sign * (hmsDevastationHalfWidth(z) - 0.06),
+                                        (if (z < hmsDevastationForeDeckEnd) 1.3 else 0.7) + 0.53,
+                                        z,
+                                    )
+                                }
+                            perimeter.zipWithNext { from, to -> rail(from, to, thickness = 0.3) }
+                        }
+                        for (x in listOf(4.5, 11.5)) {
+                            rail(Vec(x, 4.65, hmsDevastationUpperZ(-0.8)), Vec(x, 4.65, hmsDevastationUpperZ(15.9)), thickness = 0.3)
+                        }
+                        rail(Vec(4.5, 4.65, hmsDevastationUpperZ(-0.74)), Vec(11.5, 4.65, hmsDevastationUpperZ(-0.74)), thickness = 0.3)
+                        for ((minX, maxX) in listOf(4.4 to 4.8, 5.5 to 10.5, 11.2 to 11.6)) {
+                            rail(Vec(minX, 4.65, hmsDevastationUpperZ(16.0)), Vec(maxX, 4.65, hmsDevastationUpperZ(16.0)), thickness = 0.3)
+                        }
+                        for (x in listOf(4.78, 5.52, 10.48, 11.22)) {
+                            rail(Vec(x, 2.3, hmsDevastationUpperZ(18.4)), Vec(x, 4.65, hmsDevastationUpperZ(16.0)), thickness = 0.3)
+                        }
+                    }.build(),
         )
 
-    val all: List<Boat> = listOf(dolly, pillnitz, tempete)
+    private fun hmsDevastationTurret(
+        id: String,
+        z: Double,
+        aft: Boolean,
+    ): BoatWeapon {
+        val direction = if (aft) -1.0 else 1.0
+        return BoatWeapon(
+            name = "${if (aft) "Aft" else "Forward"} twin 12-inch turret",
+            id = "$id-turret",
+            model = "aechronis:hms-devastation-turret-$id",
+            pivotOffset = point(hmsDevastationScale, 8.0, 1.8, hmsDevastationUpperZ(z)),
+            muzzleOffsets =
+                listOf(
+                    vector(hmsDevastationScale, -0.55, 0.7, direction * 3.52),
+                    vector(
+                        hmsDevastationScale,
+                        0.55,
+                        0.7,
+                        direction * 3.52,
+                    ),
+                ),
+            operatorOffset = point(hmsDevastationScale, 8.0, 1.8, hmsDevastationUpperZ(z)),
+            interactionHitbox =
+                Hitbox(
+                    listOf(
+                        HitboxPart(vector(hmsDevastationScale, 0.0, 0.8, 0.0), vector(hmsDevastationScale, 2.4, 0.85, 2.4)),
+                        HitboxPart(vector(hmsDevastationScale, 0.0, 0.7, direction * 2.9), vector(hmsDevastationScale, 0.8, 0.35, 0.65)),
+                    ),
+                ),
+            neutralYaw = if (aft) 180F else 0F,
+            maxYaw = 135F,
+            scopeEyeDistance = 3.5,
+            traverseSpeed = 0.65F,
+            minPitch = -10F,
+            maxPitch = 5F,
+            reloadTime = 12000,
+            projectileSpeed = 4.0,
+            projectileExplosionRadius = 4,
+            projectileExplosionDamage = 110F,
+            projectileMaxRange = 288.0,
+        )
+    }
+
+    private fun hmsDevastationOutline(stations: List<Pair<Double, Double>>): List<Pair<Double, Double>> =
+        stations.map { (z, width) -> (8.0 + width) to z } +
+            stations.reversed().map { (z, width) -> (8.0 - width) to z }
+
+    private fun hmsDevastationCircle(
+        x: Double,
+        z: Double,
+        radius: Double,
+    ): List<Pair<Double, Double>> =
+        (0 until 24).map { index ->
+            val angle = index * PI / 12
+            (x + radius * cos(angle)) to (z + radius * sin(angle))
+        }
+
+    val all: List<Boat> = listOf(dolly, pillnitz, hmsDevastation)
 
     // Item displays turn the model's -Z bow toward vehicle-local +Z and mirror X.
     // All editable asset coordinates have their waterline at Y=0 and model center at (8, 8, 8).
@@ -563,122 +705,4 @@ object Boats {
 
     private fun symmetricOutline(port: List<Pair<Double, Double>>): List<Pair<Double, Double>> =
         port + port.asReversed().map { (x, z) -> 16.0 - x to z }
-
-    private fun tempeteCollision(scale: Vec): ShulkerHitbox =
-        CollisionBuilder(scale)
-            .apply {
-                surface(
-                    mirroredOutline(
-                        -14.931 to 0.197,
-                        -11.5412 to 2.0685,
-                        -5.3598 to 3.98925,
-                        2.2174 to 5.26975,
-                        19.964 to 5.26975,
-                        24.8493 to 4.6295,
-                        28.4385 to 2.8565,
-                        30.7316 to 0.6895,
-                    ),
-                    top = 0.9,
-                )
-
-                // The rounded stern of the breastwork is the landing for both aft stairs.
-                surface(
-                    mirroredOutline(
-                        -3.7882 to 0.297,
-                        -2.989 to 2.7225,
-                        -1.3906 to 3.564,
-                        20.0879 to 3.564,
-                        22.0859 to 2.7225,
-                        23.2847 to 0.99,
-                    ),
-                    top = 1.96,
-                )
-
-                // Preserve standing clearance beneath the cantilevered hurricane deck.
-                surface(
-                    mirroredOutline(
-                        3.9164 to 2.4625,
-                        4.4144 to 2.955,
-                        21.3464 to 2.955,
-                        21.8444 to 2.4625,
-                    ),
-                    top = 4.73,
-                    maxCubeSize = 2.5,
-                )
-
-                for (minX in listOf(5.57, 9.67)) {
-                    repeat(6) { step ->
-                        surface(
-                            minX,
-                            minX + 0.76,
-                            24.35 - step * 0.43,
-                            24.65 - step * 0.43,
-                            top = 1.065 + step * 0.177,
-                            maxCubeSize = 0.5,
-                        )
-                    }
-                }
-                for (x in listOf(5.53, 10.47)) {
-                    rail(Vec(x, 1.68, 24.7), Vec(x, 2.7, 22.1), thickness = 0.3)
-                }
-
-                // Turret armour is circular; the offset sighting hood and barrels
-                // traverse independently and cannot use collision fixed to the hull.
-                column(circle(8.0, 0.5, 3.3), bottom = 1.96, top = 3.715)
-                solid(7.25, 1.96, 5.1, 8.75, 4.52, 20.3)
-                column(circle(8.0, 20.3, 0.75), bottom = 1.96, top = 4.52)
-                column(circle(8.0, 6.6, 0.61), bottom = 4.73, top = 8.105)
-                // Main mast, bridge instruments, and the two ventilators occupy the deck.
-                solid(7.91, 4.73, 13.01, 8.09, 13.5, 13.19)
-                solid(7.74, 4.73, 4.39, 8.26, 5.39, 4.91)
-                for (z in listOf(10.2, 17.7)) {
-                    solid(7.83, 4.73, z - 0.17, 8.17, 6.13, z + 0.17)
-                }
-
-                surface(7.25, 8.75, 26.7, 28.0, top = 1.11)
-                solid(7.65, 0.9, -8.85, 8.35, 1.455, -8.15)
-
-                val sheer =
-                    mirroredOutline(
-                        -14.77 to 0.1956,
-                        -11.404 to 2.0538,
-                        -5.266 to 3.9609,
-                        2.258 to 5.2323,
-                        19.88 to 5.2323,
-                        24.731 to 4.5966,
-                        28.295 to 2.8362,
-                        30.572 to 0.6846,
-                    )
-                for (index in sheer.indices) {
-                    val from = sheer[index]
-                    val to = sheer[(index + 1) % sheer.size]
-                    rail(Vec(from.first, 1.65, from.second), Vec(to.first, 1.65, to.second), thickness = 0.4)
-                }
-
-                // Side handrails and the solid forward/aft screens form one closed boundary.
-                for (x in listOf(5.05, 10.95)) {
-                    rail(Vec(x, 5.54, 4.65), Vec(x, 5.54, 21.35), thickness = 0.35)
-                }
-                rail(Vec(5.55, 5.335, 3.97), Vec(10.45, 5.335, 3.97), thickness = 0.35)
-                rail(Vec(5.55, 5.335, 21.83), Vec(10.45, 5.335, 21.83), thickness = 0.35)
-                rail(Vec(5.05, 5.335, 4.65), Vec(5.55, 5.335, 3.97), thickness = 0.35)
-                rail(Vec(10.95, 5.335, 4.65), Vec(10.45, 5.335, 3.97), thickness = 0.35)
-                rail(Vec(5.05, 5.335, 21.35), Vec(5.55, 5.335, 21.83), thickness = 0.35)
-                rail(Vec(10.95, 5.335, 21.35), Vec(10.45, 5.335, 21.83), thickness = 0.35)
-            }.build()
-
-    /** Stations are (Z, half beam), with the model's centerline at X=8. */
-    private fun mirroredOutline(vararg stations: Pair<Double, Double>): List<Pair<Double, Double>> =
-        stations.map { (z, halfWidth) -> (8.0 + halfWidth) to z } +
-            stations.reversed().map { (z, halfWidth) -> (8.0 - halfWidth) to z }
-
-    private fun circle(
-        x: Double,
-        z: Double,
-        radius: Double,
-    ): List<Pair<Double, Double>> =
-        (0 until 16).map { index ->
-            val angle = index * PI / 8
-            (x + radius * cos(angle)) to (z + radius * sin(angle))
-        }
 }

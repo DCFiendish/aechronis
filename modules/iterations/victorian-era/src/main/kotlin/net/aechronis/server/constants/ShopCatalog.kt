@@ -32,7 +32,7 @@ object ShopCatalog {
                 GUN_ROW,
                 listOf(
                     paid(Guns.spencerModel1860.toItemStack(), 4),
-                    paid(Guns.winchesterModel1873.toItemStack(), 5),
+                    paid(Guns.winchesterModel1873.toItemStack(), 6),
                     paid(Guns.adamsMkIII.toItemStack(), 1),
                     paid(Guns.colt1851.toItemStack(), 1),
                     paid(Guns.coltSingleActionArmy.toItemStack(), 2),

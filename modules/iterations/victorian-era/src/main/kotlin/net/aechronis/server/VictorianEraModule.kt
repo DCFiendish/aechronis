@@ -152,15 +152,6 @@ class VictorianEraModule : AechronisModule {
                 sidearm = Guns.adamsMkIII,
             ),
             kit(
-                "repeater",
-                "Repeater",
-                Guns.winchesterModel1873,
-                listOf(Guns.winchesterModel1873 to 64, Guns.adamsMkIII to 24),
-                Melees.cavalrySabre,
-                listOf(Armor.britainJacket, Armor.britainTrousers, Armor.britainBoots),
-                sidearm = Guns.adamsMkIII,
-            ),
-            kit(
                 "skirmisher",
                 "Skirmisher",
                 Guns.chassepotCarbine,

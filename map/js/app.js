@@ -595,7 +595,10 @@ function bootMap(initial) {
 
   function renderTerritoryPanel(hit) {
     const territory = data.world.territories[hit.territoryId];
-    const tname = territory && territory.name ? territory.name : `#${hit.territoryId}`;
+    // Server names end in the hex node id (" x0ADFCB"); it is shown as its own row instead.
+    const [, baseName, suffix] = (territory?.name || '').match(/^(.*?)(?:\s+(x[0-9A-F]+))?$/i);
+    const tname = baseName || `#${hit.territoryId}`;
+    const nodeId = suffix || `x${Number(hit.territoryId).toString(16).toUpperCase()}`;
     const core = territory && territory.core;
     const sizeChunks = territory ? territory.size : 0;
     const resources = resourceTooltip(territoryResourceKeys(territory, data.world.nodes), data.world.nodes);
@@ -608,6 +611,7 @@ function bootMap(initial) {
         ${hit.chunkOccupier ? `<dt>Chunk controller</dt><dd>${escapeHtml(hit.chunkOccupier)}</dd>` : ''}
         <dt>Size</dt><dd>${sizeChunks} chunks</dd>
         ${core ? `<dt>Core</dt><dd>${core[0]}, ${core[1]}</dd>` : ''}
+        <dt>Node ID</dt><dd>${escapeHtml(nodeId)}</dd>
       </dl>
       <h3>Resources</h3>
       ${resources || '<div class="subtitle">None</div>'}

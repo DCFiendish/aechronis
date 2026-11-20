@@ -125,6 +125,7 @@ val runtimeModuleProjects =
         ":modules:economy",
         ":modules:duels",
         ":modules:printer",
+        ":modules:brewery",
         ":modules:tebex",
         ":modules:votifier",
         ":modules:stats",

@@ -70,6 +70,7 @@ include(
     ":modules:guard",
     ":modules:duels",
     ":modules:printer",
+    ":modules:brewery",
     ":modules:iterations:a-new-millenium",
     ":modules:iterations:victorian-era",
 )
